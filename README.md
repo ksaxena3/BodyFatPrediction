@@ -9,7 +9,9 @@ Choose and revise model:
 2. Feature Correlation Analysis: Used Pearson correlation to determine the strength and direction of the linear relationship between predictors and body fat percentage.
 3. Multicollinearity Check: Used the Variance Inflation Factor (VIF) to check for multicollinearity among predictors.
 
+
 Model Development:
+
 1.Split the data into training and testing sets.
 2.Fitted a full linear regression model using all predictors.
 3. Iteratively refined the model based on VIF values and correlation strength to select a subset of predictors for a reduced model.

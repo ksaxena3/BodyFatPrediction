@@ -1,0 +1,174 @@
+---
+title: "template"
+output: html_document
+date: '2023-10-07'
+---
+
+```{r setup, include=FALSE}
+
+```
+
+## R Markdown
+
+
+```{r with DENSITY}
+# Load necessary libraries
+
+library(tidyverse)
+library(lmtest)
+library(ggplot2)
+
+# Assuming df is your data frame
+BodyFat <- read.csv("C:/Users/24788/Downloads/BodyFat.csv")
+df <- BodyFat
+
+# 1. Fit the Model with All Features
+full_model <- lm(BODYFAT ~ . - IDNO, data = df) # Assuming 'ID' is not a predictor
+summary(full_model)
+
+# 2. Pearson Correlation Test for Feature Importance
+cor_matrix <- cor(df %>% select(-IDNO))
+bodyfat_correlations <- cor_matrix[, "BODYFAT"]
+
+print(bodyfat_correlations)
+sorted_correlations <- bodyfat_correlations[order(-abs(bodyfat_correlations))]
+correlation_data <- data.frame(
+  Predictors = names(sorted_correlations),
+  Correlations = sorted_correlations
+)
+
+# Modify the data to use absolute values for the y-axis
+correlation_data$AbsCorrelations <- abs(correlation_data$Correlations)
+
+# Use the sign of the correlation to determine color
+correlation_data$Color <- ifelse(correlation_data$Correlations > 0, "blue", "red")
+
+ggplot(correlation_data, aes(x = reorder(Predictors, -AbsCorrelations), y = AbsCorrelations, fill = Color)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_identity() +
+  labs(title = "Magnitude of Correlations with BODYFAT",
+       x = "Predictors",
+       y = "Absolute Correlation",
+       fill = "Correlation") +
+  theme_minimal()
+
+# 3. Model Reduction
+# Let's say you decide to only keep predictors with correlation > 0.5 (absolute value) for simplicity
+important_vars <- names(sorted_correlations[abs(sorted_correlations) > 0.5])
+reduced_formula <- as.formula(paste("BODYFAT ~", paste(important_vars, collapse = " + ")))
+reduced_model <- lm(reduced_formula, data = df)
+summary(reduced_model)
+
+
+
+```
+
+
+```{r without DENSITY}
+# 4.revised the model with no density predictor!
+model <- lm(BODYFAT ~ . - IDNO - DENSITY, data = df)
+summary(model)
+# Exclude DENSITY and IDNO columns
+# Calculate correlations with BODYFAT, excluding IDNO, BODYFAT, and DENSITY
+# Calculate correlations of all features with each other
+cor_matrix <- cor(df %>% select(-IDNO, -DENSITY))
+
+# Extract correlations with BODYFAT
+correlations_with_BODYFAT <- cor_matrix[, "BODYFAT"]
+
+# Remove BODYFAT's correlation with itself (which will be 1)
+correlations_with_BODYFAT <- correlations_with_BODYFAT[!names(correlations_with_BODYFAT) %in% "BODYFAT"]
+
+# Sort by the absolute value to see the strongest relationships
+sorted_correlations <- correlations_with_BODYFAT[order(-abs(correlations_with_BODYFAT))]
+
+# Visualize the sorted correlations using ggplot2
+ggplot(data.frame(Feature = names(sorted_correlations), Correlation = sorted_correlations), aes(x=reorder(Feature, Correlation), y=abs(Correlation), fill=Correlation > 0)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  scale_fill_manual(values = c("#FF9999", "steelblue"), name = "Correlation", breaks = c(TRUE, FALSE), labels = c("Positive", "Negative")) +
+  ggtitle("Correlations with BODYFAT Without DENSITY") +
+  xlab("Features") +
+  ylab("Pearson Correlation Coefficient ") +
+  theme_minimal()
+
+important_vars1 <- names(sorted_correlations[abs(sorted_correlations) > 0.5])
+reduced_formula <- as.formula(paste("BODYFAT ~", paste(important_vars1, collapse = " + ")))
+reduced_model_new <- lm(reduced_formula, data = df)
+summary(reduced_model_new)
+```
+
+```{r fig.width=14, fig.height=8}
+
+library(ggcorrplot)
+library(dplyr)
+cor_matrix <- cor(df %>% select(-IDNO, -DENSITY))
+ggcorrplot(cor_matrix, hc.order = TRUE, type = "lower", lab = TRUE)
+```
+
+
+
+
+
+## Summary
+
+
+```{r fig.width=14, fig.height=8}
+library(tidyverse)
+library(car)
+library(caret)
+
+# Pearson Correlation & Feature Selection
+# Extract correlations with BODYFAT
+correlations_with_BODYFAT <- cor_matrix[, "BODYFAT"]
+
+# Remove BODYFAT's correlation with itself (which will be 1)
+correlations_with_BODYFAT <- correlations_with_BODYFAT[!names(correlations_with_BODYFAT) %in% "BODYFAT"]
+
+# Sort by the absolute value to see the strongest relationships
+sorted_correlations <- correlations_with_BODYFAT[order(-abs(correlations_with_BODYFAT))]
+important_vars <- names(sorted_correlations[abs(sorted_correlations) > 0.5])
+
+# Iterative VIF Checking
+compute_vif <- function(formula, data) {
+  vif_result <- vif(lm(formula, data = data))
+  max_vif_var <- names(which.max(vif_result))
+  list(max_vif = max(vif_result), max_vif_var = max_vif_var)
+}
+
+formula <- as.formula(paste("BODYFAT ~", paste(important_vars, collapse = " + ")))
+vif_result <- compute_vif(formula, df)
+
+while (vif_result$max_vif > 5) {
+  important_vars <- setdiff(important_vars, vif_result$max_vif_var)
+  formula <- as.formula(paste("BODYFAT ~", paste(important_vars, collapse = " + ")))
+  vif_result <- compute_vif(formula, df)
+}
+
+# Split the Data & Fit the Model
+set.seed(123)  
+splitIndex <- createDataPartition(df$BODYFAT, p = 0.8, list = FALSE)
+train_data <- df[splitIndex,]
+test_data <- df[-splitIndex,]
+reduced_model <- lm(formula, data = train_data)
+summary(reduced_model)
+# Model Evaluation
+predictions <- predict(reduced_model, newdata = test_data)
+actuals <- test_data$BODYFAT
+mse <- mean((predictions - actuals)^2)
+rmse <- sqrt(mse)
+# Fit the Full Model & Evaluate
+formula_full <- BODYFAT ~ . - IDNO - DENSITY
+full_model <- lm(formula_full, data = train_data)
+predictions_full <- predict(full_model, newdata = test_data)
+mse_full <- mean((predictions_full - test_data$BODYFAT)^2)
+rmse_full <- sqrt(mse_full)
+
+# Compare Models
+cat("Full model RMSE:", rmse_full, "\n")
+cat("Reduced model RMSE:", rmse, "\n")
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -19,7 +19,7 @@ library(lmtest)
 library(ggplot2)
 
 # Assuming df is your data frame
-BodyFat <- read.csv("C:/Users/24788/Downloads/BodyFat.csv")
+BodyFat <- read.csv("BodyFat.csv")
 df <- BodyFat
 
 # 1. Fit the Model with All Features
@@ -59,9 +59,6 @@ important_vars <- names(sorted_correlations[abs(sorted_correlations) > 0.5])
 reduced_formula <- as.formula(paste("BODYFAT ~", paste(important_vars, collapse = " + ")))
 reduced_model <- lm(reduced_formula, data = df)
 summary(reduced_model)
-
-
-
 ```
 
 

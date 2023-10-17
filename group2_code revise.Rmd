@@ -10,7 +10,8 @@ date: '2023-10-07'
 
 ## R Markdown
 
-## read dataset and neglect IDNO DENSITY and ADIPOSITY (reason it can be directly calculated from height and weight) 
+
+## read dataset do cleaning using formula and neglect IDNO DENSITY and ADIPOSITY (reason it can be directly calculated from height and weight) 
 
 ```{r read data}
 # Load necessary libraries
@@ -23,9 +24,20 @@ library(ggplot2)
 BodyFat <- read.csv("C:/Users/24788/Downloads/BodyFat.csv")
 df <- BodyFat
 
+# Calculate the percentage of body fat using the provided formula
+df$calculated_bodyfat <- 495 / df$DENSITY - 450
+
+# let's consider values below 2 or above 100 as impossible.
+impossible_values <- which(df$calculated_bodyfat <2 | df$calculated_bodyfat > 50|df$BODYFAT<2|df$BODYFAT>50)
+
+# You can then decide to remove these impossible records.
+df_clean <- df[-impossible_values, ]
+
+
+df<-df_clean
 #removed unwanted columns like IDNO, DENSITY, ADIPOSITY
 df <- df %>%
-  select(-IDNO, -DENSITY, -ADIPOSITY)
+  select(-IDNO, -DENSITY, -ADIPOSITY, -calculated_bodyfat)
 
 ```
 

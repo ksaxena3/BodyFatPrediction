@@ -1,0 +1,211 @@
+---
+title: "template"
+output: html_document
+date: '2023-10-07'
+---
+
+```{r setup, include=FALSE}
+
+```
+
+## R Markdown
+
+## read dataset and neglect IDNO DENSITY and ADIPOSITY (reason it can be directly calculated from height and weight) 
+
+```{r read data}
+# Load necessary libraries
+
+library(tidyverse)
+library(lmtest)
+library(ggplot2)
+
+# Assuming df is your data frame
+BodyFat <- read.csv("C:/Users/24788/Downloads/BodyFat.csv")
+df <- BodyFat
+
+#removed unwanted columns like IDNO, DENSITY, ADIPOSITY
+df <- df %>%
+  select(-IDNO, -DENSITY, -ADIPOSITY)
+
+```
+
+
+## using corrleation matrix to pick up the most related variables,from the plot we see many features are related so we decided to use vif and recursive elimation to further modify out model.
+
+```{r fig.width=14, fig.height=8}
+
+library(ggcorrplot)
+library(dplyr)
+cor_matrix <- cor(df)
+ggcorrplot(cor_matrix, hc.order = TRUE, type = "lower", lab = TRUE)
+
+cor_matrix <- cor(df )
+
+# Extract correlations with BODYFAT
+correlations_with_BODYFAT <- cor_matrix[, "BODYFAT"]
+
+# Remove BODYFAT's correlation with itself (which will be 1)
+correlations_with_BODYFAT <- correlations_with_BODYFAT[!names(correlations_with_BODYFAT) %in% "BODYFAT"]
+
+# Sort by the absolute value to see the strongest relationships
+sorted_correlations <- correlations_with_BODYFAT[order(-abs(correlations_with_BODYFAT))]
+
+# Visualize the sorted correlations using ggplot2
+ggplot(data.frame(Feature = names(sorted_correlations), Correlation = sorted_correlations), aes(x=reorder(Feature, Correlation), y=abs(Correlation), fill=Correlation > 0)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  scale_fill_manual(values = c("#FF9999", "steelblue"), name = "Correlation", breaks = c(TRUE, FALSE), labels = c("Positive", "Negative")) +
+  ggtitle("Correlations with BODYFAT Without DENSITY") +
+  xlab("Features") +
+  ylab("Pearson Correlation Coefficient ") +
+  theme_minimal()
+```
+
+## final result and comparion base on rmse and r squared
+
+```{r combined rfe and vif}
+library(caret)
+library(ggplot2)
+library(dplyr)
+
+# Calculate correlations of each variable with BODYFAT
+correlations <- cor(df)
+target_correlations <- correlations[, "BODYFAT"]
+
+# Select variables that meet the threshold for correlation
+highly_correlated_vars <- names(target_correlations[which(abs(target_correlations) > 0.5)])
+
+# Remove BODYFAT from the predictor dataset since it's the target variable
+predictor_vars <- highly_correlated_vars[highly_correlated_vars != "BODYFAT"]
+
+# Prepare data for rfe
+predictors <- df[, predictor_vars]
+response <- df$BODYFAT
+
+set.seed(123) # for reproducibility
+
+# Define training control
+train_control <- rfeControl(
+  functions = lmFuncs,
+  method = "cv",
+  number = 10 # number of folds in cross-validation
+)
+
+# Run the recursive feature elimination
+results <- rfe(
+  x = predictors, 
+  y = response,
+  sizes = c(1:length(predictor_vars)), # to test models with all possible numbers of predictors
+  rfeControl = train_control
+)
+
+# Extract the results
+result_frame <- data.frame(
+  Predictors = results$results$Variables, 
+  Rsquared = results$results$Rsquared
+)
+
+# Create the plot
+ggplot(result_frame, aes(x = Predictors, y = Rsquared)) + 
+  geom_point() +
+  geom_line() +
+  labs(title = "Number of Predictors vs R-squared",
+       x = "Number of Predictors",
+       y = "R-squared") +
+  theme_minimal()
+
+
+# Print the summary of the RFE result
+print(results)
+
+model_simplified <- lm(BODYFAT ~ ABDOMEN + THIGH + HIP + WEIGHT, data = df)
+
+# Check the summary
+summary(model_simplified)
+
+# Calculate VIFs for the new model
+library(car)
+vif_simplified <- vif(model_simplified)
+print(vif_simplified)
+
+
+# Removing the variable with the highest VIF
+
+model_simplified <- lm(BODYFAT ~ ABDOMEN + THIGH + WEIGHT, data = df)
+
+# Check the summary
+summary(model_simplified)
+
+# Calculate VIFs for the new model
+vif_simplified <- vif(model_simplified)
+print(vif_simplified)
+
+# Removing the variable with the highest VIF
+
+model_simplified <- lm(BODYFAT ~ ABDOMEN + THIGH, data = df)
+
+# Check the summary
+summary(model_simplified)
+
+# Calculate VIFs for the new model
+vif_simplified <- vif(model_simplified)
+print(vif_simplified)
+
+plot(model_simplified)
+```
+
+```{r test rmse}
+# Load necessary library
+library(caret)
+
+# Prepare data
+set.seed(123)  # for reproducibility
+training_index <- createDataPartition(df$BODYFAT, p = 0.8, list = FALSE)
+training_data <- df[training_index, ]
+testing_data <- df[-training_index, ]
+
+# Fit the full model
+full_model <- lm(BODYFAT ~ ., data = training_data)  # replace '.' with actual predictors if you haven't removed 'IDNO' and 'DENSITY'
+
+# Fit the reduced model, based on the variables you've chosen through Pearson's correlation, recursive feature elimination, and VIF
+reduced_model <- lm(BODYFAT ~ ABDOMEN + THIGH + WEIGHT, data = training_data)  # replace with your actual formula if different
+
+# Predict on the test set
+predictions_full <- predict(full_model, newdata = testing_data)
+predictions_reduced <- predict(reduced_model, newdata = testing_data)
+
+# Calculate the RMSE
+rmse_full <- sqrt(mean((predictions_full - testing_data$BODYFAT)^2))
+rmse_reduced <- sqrt(mean((predictions_reduced - testing_data$BODYFAT)^2))
+
+# Print the results
+cat("Full model RMSE:", rmse_full, "\n")
+cat("Reduced model RMSE:", rmse_reduced, "\n")
+
+# Define the models
+formula1 <- BODYFAT ~ ABDOMEN + THIGH + WEIGHT + HIP
+formula2 <- BODYFAT ~ ABDOMEN + THIGH
+
+# Fit the models on the training data
+model1 <- lm(formula1, data = training_data)
+model2 <- lm(formula2, data = training_data)
+
+# Predict on the testing data
+predictions1 <- predict(model1, newdata = testing_data)
+predictions2 <- predict(model2, newdata = testing_data)
+
+# Calculate RMSE
+rmse1 <- sqrt(mean((predictions1 - testing_data$BODYFAT)^2))
+rmse2 <- sqrt(mean((predictions2 - testing_data$BODYFAT)^2))
+
+# Print the RMSE
+print(paste("RMSE for model 1 (ABDOMEN + THIGH + WEIGHT + HIP):", rmse1))
+print(paste("RMSE for model 2 (ABDOMEN + THIGH):", rmse2))
+print(paste("RMSE for model 1 (ABDOMEN + THIGH + WEIGHT ):", rmse_reduced))
+
+print(paste("RMSE for model 1 (full model ):", rmse_full))
+
+
+
+
+```
